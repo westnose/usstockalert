@@ -51,7 +51,9 @@ DEBUG_SCREENSHOT = Path(__file__).parent / "debug.png"
 DEBUG_CSV = Path(__file__).parent / "debug_last_download.csv"
 
 # 표 제목에 이 문구가 포함된 표를 "진입 대기" 표로 간주한다.
-SECTION_HEADING_PATTERN = re.compile(r"진입\s*대기")
+# 상단 통계 카드에도 "진입 대기"라는 라벨이 단독으로 나오므로, 그것과 헷갈리지 않도록
+# "...N건" 형태(예: "🟠 진입 대기 · 297건")까지 포함해서 매칭한다.
+SECTION_HEADING_PATTERN = re.compile(r"진입\s*대기[^\n]{0,15}\d+\s*건")
 
 # 새 종목을 구분하는 키로 사용할 후보 컬럼(우선순위 순).
 TICKER_COLUMN_CANDIDATES = ["티커", "Ticker", "ticker", "종목코드"]
@@ -142,18 +144,41 @@ def get_app_frame(page):
 # "진입 대기" 표 CSV 다운로드
 # ---------------------------------------------------------------------------
 
-def download_pending_table_csv(page, frame) -> str:
-    heading = frame.get_by_text(SECTION_HEADING_PATTERN).first
-    heading.wait_for(state="visible", timeout=30000)
-    heading.scroll_into_view_if_needed()
-    page.wait_for_timeout(500)
+def find_visible_pending_table(page, frame):
+    """'진입 대기 · N건' 형태의 제목을 가진 stDataFrame을 찾는다.
+    같은 문구를 가진 요소가 여러 개일 수 있고(탭이 여러 개 있거나 렌더링 타이밍 문제 등),
+    그중 실제로 화면에 렌더링되어 보이는 첫 번째 표를 찾을 때까지 후보를 순서대로 시도한다."""
+    headings = frame.get_by_text(SECTION_HEADING_PATTERN)
+    heading_count = headings.count()
+    print(f"[정보] '진입 대기 · N건' 패턴과 일치하는 제목 후보 {heading_count}개 발견")
+    if heading_count == 0:
+        raise RuntimeError("'진입 대기 · N건' 형태의 표 제목을 찾지 못했습니다.")
 
-    # 표 컨테이너는 제목 바로 다음에 나오는 stDataFrame 요소로 가정한다.
-    table = heading.locator(
-        "xpath=following::*[@data-testid='stDataFrame'][1]"
-    ).first
-    table.wait_for(state="visible", timeout=30000)
-    table.scroll_into_view_if_needed()
+    for hi in range(heading_count):
+        heading = headings.nth(hi)
+        try:
+            heading.scroll_into_view_if_needed(timeout=5000)
+        except Exception:
+            pass
+        page.wait_for_timeout(300)
+
+        candidates = heading.locator("xpath=following::*[@data-testid='stDataFrame']")
+        c_count = candidates.count()
+        for ci in range(min(c_count, 3)):
+            cand = candidates.nth(ci)
+            try:
+                cand.scroll_into_view_if_needed(timeout=5000)
+                page.wait_for_timeout(300)
+                if cand.is_visible():
+                    return cand
+            except Exception:
+                continue
+
+    raise RuntimeError("진입 대기 표(stDataFrame)를 화면에서 찾지 못했습니다 (모두 hidden 상태).")
+
+
+def download_pending_table_csv(page, frame) -> str:
+    table = find_visible_pending_table(page, frame)
     table.hover()
     page.wait_for_timeout(300)
 
