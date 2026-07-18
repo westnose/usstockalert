@@ -1,0 +1,52 @@
+name: watch-entry-pending
+
+on:
+  schedule:
+    # 15분 간격, 매일 (필요하면 미국장 시간대(대략 13:30~20:00 UTC, 평일)로 좁혀서
+    # 아래 줄 대신 "*/15 13-20 * * 1-5" 를 사용하면 Actions 사용 시간을 아낄 수 있습니다.
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install -r telegram_alert/requirements.txt
+          python -m playwright install --with-deps chromium
+
+      - name: Run watcher
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+        working-directory: telegram_alert
+        run: python watch_entry.py
+
+      - name: Upload debug artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-artifacts
+          path: |
+            telegram_alert/debug.png
+            telegram_alert/debug_last_download.csv
+          if-no-files-found: ignore
+
+      - name: Commit updated snapshot
+        if: success()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add telegram_alert/state/pending_snapshot.json
+          git diff --cached --quiet || git commit -m "chore: update pending snapshot [skip ci]"
+          git push
