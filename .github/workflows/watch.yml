@@ -22,14 +22,13 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -r telegram_alert/requirements.txt
+          pip install -r requirements.txt
           python -m playwright install --with-deps chromium
 
       - name: Run watcher
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-        working-directory: telegram_alert
         run: python watch_entry.py
 
       - name: Upload debug artifacts on failure
@@ -38,8 +37,8 @@ jobs:
         with:
           name: debug-artifacts
           path: |
-            telegram_alert/debug.png
-            telegram_alert/debug_last_download.csv
+            debug.png
+            debug_last_download.csv
           if-no-files-found: ignore
 
       - name: Commit updated snapshot
@@ -47,6 +46,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add telegram_alert/state/pending_snapshot.json
+          git add state/pending_snapshot.json
           git diff --cached --quiet || git commit -m "chore: update pending snapshot [skip ci]"
           git push
