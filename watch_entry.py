@@ -187,8 +187,17 @@ def download_pending_table_csv(page, frame) -> str:
     ).first
     download_btn.wait_for(state="visible", timeout=10000)
 
-    with page.expect_download() as dl_info:
+    with page.expect_download(timeout=45000) as dl_info:
         download_btn.click()
+        # 일부 Streamlit 버전은 다운로드 버튼을 누르면 바로 받아지지 않고
+        # CSV/JSON/TSV 중 형식을 고르는 작은 메뉴가 한 번 더 뜬다. 있으면 CSV를 고른다.
+        page.wait_for_timeout(500)
+        try:
+            csv_option = page.get_by_text(re.compile(r"\bcsv\b", re.I)).first
+            if csv_option.is_visible(timeout=2000):
+                csv_option.click()
+        except Exception:
+            pass
     download = dl_info.value
     csv_path = download.path()
     return Path(csv_path).read_text(encoding="utf-8")
